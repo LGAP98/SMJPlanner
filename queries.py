@@ -66,3 +66,29 @@ select_score = """WITH stats as
                                 WHERE day < (SELECT day FROM "Plan" WHERE "Plan".id = %(planId)s)
      GROUP BY  AJ."B", "jobType")
 SELECT worker, PJ.id as job, score FROM stats JOIN "ProposedJob" PJ ON stats."jobType" = PJ."jobType"; """
+
+select_drive_jobs = """
+WITH seats as (SELECT AJ.id, sum("seats") as seats
+    FROM "ActiveJob" AJ JOIN "_ActiveJobToWorker" AJTW on AJ.id = AJTW."A" JOIN "Worker" W on W.id = AJTW."B" JOIN "Car" C on W.id = C."ownerId"
+    WHERE "planId" =  %(planId)s
+    GROUP BY AJ.id),
+    people as (SELECT AJ.id, count(W.id) as need
+    FROM "ActiveJob" AJ JOIN "_ActiveJobToWorker" AJTW on AJ.id = AJTW."A" JOIN "Worker" W on W.id = AJTW."B"
+    WHERE "planId" =  %(planId)s
+    GROUP BY AJ.id)
+SELECT seats.id,seats >= need as ok
+FROM seats JOIN people ON people.id = seats.id JOIN "ActiveJob" AJ ON AJ.id = seats.id JOIN "ProposedJob" PJ on PJ.id = AJ."proposedJobId"
+    WHERE "areaId" IN (SELECT id FROM "Area" WHERE "requiresCar") ORDER BY  ok desc;
+"""
+
+select_driver = """SELECT W.id as id, C.id as "carId", "seats"
+    FROM "ActiveJob" AJ JOIN "_ActiveJobToWorker" AJTW on AJ.id = AJTW."A" JOIN "Worker" W on W.id = AJTW."B" JOIN "Car" C on W.id = C."ownerId"
+    WHERE AJ."id" = %(planId)s 
+    """
+
+select_people = """SELECT "B" as id FROM "_ActiveJobToWorker" AJTW WHERE "A" = %(planId)s AND AJTW."B" not in (SELECT "ownerId" FROM "Car") """
+
+insert_ride = """INSERT INTO "Ride" ("id", "driverId", "carId", "jobId") VALUES (%(uuid)s, %(driver)s, %(car)s, %(job)s)"""
+
+insert_rider = """INSERT INTO "_RideToWorker" ("A", "B") VALUES (%(ride)s, %(worker)s)"""
+

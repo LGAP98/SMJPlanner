@@ -1,8 +1,9 @@
 import psycopg2
 from psycopg2 import extras
-from pulp import LpMinimize, LpProblem, LpStatus, lpSum, LpVariable, LpAffineExpression
+from pulp import LpMinimize, LpProblem, lpSum, LpVariable
 import pandas as pd
-import math
+import uuid
+
 
 from queries import *
 
@@ -69,7 +70,7 @@ def generate_plan(plan_id, connection, first_round=True, attempt=0):
     score = []
 
     counter = 0
-    area_drivers = dict.fromkeys(areas.keys(),[])
+    area_drivers = dict.fromkeys(areas.keys(), [])
 
     for job in jobs:
         job_vars = {}
@@ -104,6 +105,7 @@ def generate_plan(plan_id, connection, first_round=True, attempt=0):
     for worker in workers:
         model += (lpSum(model_variables[worker].tolist()) <= 1)
         model += (lpSum(model_variables[worker].tolist()) >= 1)
+
     if attempt < 2:
         for forbid in forbids:
             friend = forbids[forbid]["forbid"]
@@ -159,10 +161,44 @@ def add_variable(counter, driver, first_round, job, job_vars, strongman, worker,
             area_driver[job["areaId"]].append(workers[worker]["seats"] * x)
 
 
-test_connection = psycopg2.connect("postgresql://username:password@localhost:5432/summerjob",
-                                   options="-c search_path=public")
+def generate_rides(received_plan_id, connection):
+    dict_cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    primitive_cursor = connection.cursor()
+    psycopg2.extras.register_uuid()
 
-test_plan_id = "9fdcbb17-5ade-4a68-a51d-1a9e7dc9e10b"
+    jobs = load(dict_cursor, received_plan_id, select_drive_jobs)
+    for job in jobs:
+        drivers = load(dict_cursor, job, select_driver)
+        people = list(load(dict_cursor, job, select_people).keys()) + list(drivers.keys())
+        people_pointer = 0
+        for driver in drivers:
+            if len(people) == 0:
+                break
+            people.remove(driver)
+            ride = uuid.uuid4()
+            dict_cursor.execute(insert_ride, {"uuid": ride, "driver": driver, "car": drivers[driver]["carId"], "job": job})
+            connection.commit()
+            seats = drivers[driver]["seats"]
+            dict_cursor.execute(insert_rider, {"ride": ride, "worker": driver})
+            seats -= 1
+            while seats > 0 and people_pointer < len(people):
+                dict_cursor.execute(insert_rider, {"ride": ride, "worker": people[people_pointer]})
+                people_pointer += 1
+                seats -= 1
 
-generate_plan(test_plan_id, test_connection)
-generate_plan(test_plan_id, test_connection, False)
+    # find_people without ride people for area
+    # find empty rides - id = area, ride, seats ORDER by seats
+
+    # for people without ride
+    # find best empty ride in the same area
+    # add to ride(ride, worker)
+
+
+def generate_plan_from_message(received_plan_id):
+    connection = psycopg2.connect("postgresql://username:password@localhost:5432/summerjob",
+                                  options="-c search_path=public")
+    generate_rides(received_plan_id, connection)
+
+    # generate_plan(received_plan_id, connection)
+    # generate_plan(received_plan_id, connection, False)
+    # generate_rides(received_plan_id, connection)
