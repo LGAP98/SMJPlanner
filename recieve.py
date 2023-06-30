@@ -14,11 +14,7 @@ with amqp.Connection(ampq_url) as c:
 
     def on_message(message):
         print('Received message (delivery tag: {}): {}'.format(message.delivery_tag, message.body))
-<<<<<<< HEAD
-=======
         generate_plan_from_message("9fdcbb17-5ade-4a68-a51d-1a9e7dc9e10b", )
-
->>>>>>> 7a3011c (WIP)
         ch.basic_ack(message.delivery_tag)
 
 
